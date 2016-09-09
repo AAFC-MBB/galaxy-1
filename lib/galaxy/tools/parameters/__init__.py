@@ -129,7 +129,7 @@ def check_param( trans, param, incoming_value, param_values ):
                     return [ value, None ]
         value = param.from_json( value, trans, param_values )
         param.validate( value, trans )
-    except ValueError, e:
+    except ValueError as e:
         error = str( e )
     return value, error
 
@@ -159,7 +159,10 @@ def params_from_strings( params, param_values, app, ignore_errors=False ):
     """
     rval = dict()
     for key, value in param_values.iteritems():
-        value = json_fix( loads( value ) )
+	#print "Error spot, name so far: " + str(key)
+	#print "Error spot, value so far: " + str(value)
+	#print "Error spot, type of value so far: " + str(type(value))
+	value = json_fix( loads( value ) )
         if key in params:
             value = params[ key ].value_from_basic( value, app, ignore_errors )
         rval[ key ] = value

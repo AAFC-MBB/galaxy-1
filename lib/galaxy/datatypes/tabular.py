@@ -3,6 +3,7 @@ Tabular datatype
 """
 from __future__ import absolute_import
 
+import abc
 import csv
 import gzip
 import logging
@@ -13,6 +14,8 @@ import tempfile
 from cgi import escape
 from json import dumps
 
+from six import PY3
+
 from galaxy import util
 from galaxy.datatypes import data, metadata
 from galaxy.datatypes.metadata import MetadataElement
@@ -20,6 +23,9 @@ from galaxy.datatypes.sniff import get_headers
 from galaxy.util.checkers import is_gzip
 
 from . import dataproviders
+
+if PY3:
+    long = int
 
 log = logging.getLogger(__name__)
 
@@ -38,6 +44,10 @@ class TabularData( data.Text ):
     MetadataElement( name="column_types", default=[], desc="Column types", param=metadata.ColumnTypesParameter, readonly=True, visible=False, no_value=[] )
     MetadataElement( name="column_names", default=[], desc="Column names", readonly=True, visible=False, optional=True, no_value=[] )
     MetadataElement( name="delimiter", default='\t', desc="Data delimiter", readonly=True, visible=False, optional=True, no_value=[] )
+
+    @abc.abstractmethod
+    def set_meta( self, dataset, **kwd ):
+        raise NotImplementedError
 
     def set_peek( self, dataset, line_count=None, is_multi_byte=False, WIDTH=256, skipchars=None ):
         super(TabularData, self).set_peek( dataset, line_count=line_count, is_multi_byte=is_multi_byte, WIDTH=WIDTH, skipchars=skipchars, line_wrap=False )
@@ -390,7 +400,7 @@ class Tabular( TabularData ):
 class Taxonomy( Tabular ):
     def __init__(self, **kwd):
         """Initialize taxonomy datatype"""
-        Tabular.__init__( self, **kwd )
+        super(Taxonomy, self).__init__( **kwd )
         self.column_names = ['Name', 'TaxId', 'Root', 'Superkingdom', 'Kingdom', 'Subkingdom',
                              'Superphylum', 'Phylum', 'Subphylum', 'Superclass', 'Class', 'Subclass',
                              'Superorder', 'Order', 'Suborder', 'Superfamily', 'Family', 'Subfamily',
@@ -399,26 +409,27 @@ class Taxonomy( Tabular ):
 
     def display_peek( self, dataset ):
         """Returns formated html of peek"""
-        return Tabular.make_html_table( self, dataset, column_names=self.column_names )
+        return super(Taxonomy, self).make_html_table( dataset, column_names=self.column_names )
 
 
 @dataproviders.decorators.has_dataproviders
 class Sam( Tabular ):
     edam_format = "format_2573"
+    edam_data = "data_0863"
     file_ext = 'sam'
     track_type = "ReadTrack"
     data_sources = { "data": "bam", "index": "bigwig" }
 
     def __init__(self, **kwd):
         """Initialize taxonomy datatype"""
-        Tabular.__init__( self, **kwd )
+        super( Sam, self ).__init__( **kwd )
         self.column_names = ['QNAME', 'FLAG', 'RNAME', 'POS', 'MAPQ', 'CIGAR',
                              'MRNM', 'MPOS', 'ISIZE', 'SEQ', 'QUAL', 'OPT'
                              ]
 
     def display_peek( self, dataset ):
         """Returns formated html of peek"""
-        return Tabular.make_html_table( self, dataset, column_names=self.column_names )
+        return super( Sam, self ).make_html_table( dataset, column_names=self.column_names )
 
     def sniff( self, filename ):
         """
@@ -600,11 +611,11 @@ class Pileup( Tabular ):
     MetadataElement( name="baseCol", default=3, desc="Reference base column", param=metadata.ColumnParameter )
 
     def init_meta( self, dataset, copy_from=None ):
-        Tabular.init_meta( self, dataset, copy_from=copy_from )
+        super( Pileup, self ).init_meta( dataset, copy_from=copy_from )
 
     def display_peek( self, dataset ):
         """Returns formated html of peek"""
-        return Tabular.make_html_table( self, dataset, column_parameter_alias={'chromCol': 'Chrom', 'startCol': 'Start', 'baseCol': 'Base'} )
+        return super( Pileup, self ).make_html_table( dataset, column_parameter_alias={'chromCol': 'Chrom', 'startCol': 'Start', 'baseCol': 'Base'} )
 
     def repair_methods( self, dataset ):
         """Return options for removing errors along with a description"""
@@ -680,10 +691,10 @@ class Vcf( Tabular ):
 
     def display_peek( self, dataset ):
         """Returns formated html of peek"""
-        return Tabular.make_html_table( self, dataset, column_names=self.column_names )
+        return super( Vcf, self ).make_html_table( dataset, column_names=self.column_names )
 
     def set_meta( self, dataset, **kwd ):
-        Tabular.set_meta( self, dataset, **kwd )
+        super( Vcf, self ).set_meta( dataset, **kwd )
         source = open( dataset.file_name )
 
         # Skip comments.
@@ -735,7 +746,7 @@ class Eland( Tabular ):
 
     def __init__(self, **kwd):
         """Initialize taxonomy datatype"""
-        Tabular.__init__( self, **kwd )
+        super( Eland, self ).__init__( **kwd )
         self.column_names = ['MACHINE', 'RUN_NO', 'LANE', 'TILE', 'X', 'Y',
                              'INDEX', 'READ_NO', 'SEQ', 'QUAL', 'CHROM', 'CONTIG',
                              'POSITION', 'STRAND', 'DESC', 'SRAS', 'PRAS', 'PART_CHROM'
@@ -849,10 +860,10 @@ class Eland( Tabular ):
             dataset.metadata.comment_lines = 0
             dataset.metadata.columns = 21
             dataset.metadata.column_types = ['str', 'int', 'int', 'int', 'int', 'int', 'str', 'int', 'str', 'str', 'str', 'str', 'str', 'str', 'str', 'str', 'str', 'str', 'str', 'str', 'str']
-            dataset.metadata.lanes = lanes.keys()
+            dataset.metadata.lanes = list(lanes.keys())
             dataset.metadata.tiles = ["%04d" % int(t) for t in tiles.keys()]
-            dataset.metadata.barcodes = filter(lambda x: x != '0', barcodes.keys()) + ['NoIndex' for x in barcodes.keys() if x == '0']
-            dataset.metadata.reads = reads.keys()
+            dataset.metadata.barcodes = [_ for _ in barcodes.keys() if _ != '0'] + ['NoIndex' for _ in barcodes.keys() if _ == '0']
+            dataset.metadata.reads = list(reads.keys())
 
 
 class ElandMulti( Tabular ):
@@ -877,11 +888,10 @@ class BaseCSV( TabularData ):
     Delimiter-separated table data.
     This includes CSV, TSV and other dialects understood by the
     Python 'csv' module https://docs.python.org/2/library/csv.html
-    Must be extended to define the dialect to use, strict_width: and file_ext.
-    See Python module csv for documentation of dialect settings
+    Must be extended to define the dialect to use, strict_width and file_ext.
+    See the Python module csv for documentation of dialect settings
     """
     delimiter = ','
-    file_ext = 'csv'  # File extension
     peek_size = 1024  # File chunk used for sniffing CSV dialect
     big_peek_size = 10240  # Large File chunk used for sniffing CSV dialect
 
@@ -915,7 +925,7 @@ class BaseCSV( TabularData ):
             # check the dialect works
             reader = csv.reader(open(filename, 'r'), self.dialect)
             # Check we can read header and get columns
-            header_row = reader.next()
+            header_row = next(reader)
             if len(header_row) < 2:
                 # No columns so not separated by this dialect.
                 return False
@@ -933,7 +943,7 @@ class BaseCSV( TabularData ):
                 if not found_second_line:
                     return False
             else:
-                data_row = reader.next()
+                data_row = next(reader)
                 if len(data_row) < 2:
                     # No columns so not separated by this dialect.
                     return False
@@ -971,8 +981,8 @@ class BaseCSV( TabularData ):
             data_row = None
             header_row = None
             try:
-                header_row = reader.next()
-                data_row = reader.next()
+                header_row = next(reader)
+                data_row = next(reader)
                 for row in reader:
                     pass
             except csv.Error as e:
@@ -998,12 +1008,9 @@ class CSV( BaseCSV ):
     Comma-separated table data.
     Only sniffs comma-separated files with at least 2 rows and 2 columns.
     """
-
-    def __init__(self, **kwd):
-        BaseCSV.__init__( self, **kwd )
-        self.dialect = csv.excel  # This is the default
-        self.file_ext = 'csv'  # File extension
-        self.strict_width = False  # Previous csv type did not check column width
+    file_ext = 'csv'
+    dialect = csv.excel  # This is the default
+    strict_width = False  # Previous csv type did not check column width
 
 
 @dataproviders.decorators.has_dataproviders
@@ -1020,12 +1027,9 @@ class TSV( BaseCSV ):
     column less to indicate first column is row names. This kind of file is
     handled fine by the tabular datatype.
     """
-
-    def __init__(self, **kwd):
-        BaseCSV.__init__( self, **kwd )
-        self.dialect = csv.excel_tab
-        self.file_ext = 'tsv'  # File extension
-        self.strict_width = True  # Leave files with different width to tabular
+    file_ext = 'tsv'
+    dialect = csv.excel_tab
+    strict_width = True  # Leave files with different width to tabular
 
 
 class ConnectivityTable( Tabular ):
@@ -1036,7 +1040,7 @@ class ConnectivityTable( Tabular ):
     structure_regexp = re.compile( "^[0-9]+" + "(?:\t|[ ]+)" + "[ACGTURYKMSWBDHVN]+" + "(?:\t|[ ]+)" + "[^\t]+" + "(?:\t|[ ]+)" + "[^\t]+" + "(?:\t|[ ]+)" + "[^\t]+" + "(?:\t|[ ]+)" + "[^\t]+")
 
     def __init__(self, **kwd):
-        Tabular.__init__( self, **kwd )
+        super( ConnectivityTable, self ).__init__( **kwd )
         self.columns = 6
         self.column_names = ['base_index', 'base', 'neighbor_left', 'neighbor_right', 'partner', 'natural_numbering']
         self.column_types = ['int', 'str', 'int', 'int', 'int', 'int']
@@ -1044,7 +1048,7 @@ class ConnectivityTable( Tabular ):
     def set_meta( self, dataset, **kwd ):
         data_lines = 0
 
-        for line in file( dataset.file_name ):
+        for line in open( dataset.file_name ):
             data_lines += 1
 
         dataset.metadata.data_lines = data_lines

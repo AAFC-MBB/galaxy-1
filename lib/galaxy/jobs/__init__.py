@@ -413,7 +413,15 @@ class JobConfiguration( object ):
 
         :returns: str -- id or tag representing the default.
         """
+
         rval = parent.get('default')
+        if 'default_from_environ' in parent.attrib:
+            environ_var = parent.attrib['default_from_environ']
+            rval = os.environ.get(environ_var, rval)
+        elif 'default_from_config' in parent.attrib:
+            config_val = parent.attrib['default_from_config']
+            rval = self.app.config.config_dict.get(config_val, rval)
+
         if rval is not None:
             # If the parent element has a 'default' attribute, use the id or tag in that attribute
             if rval not in names:
@@ -773,6 +781,47 @@ class JobWrapper( object ):
         self.__user_system_pwent = None
         self.__galaxy_system_pwent = None
 
+	#####
+	'''
+	query = self.sa_session.query(galaxy.model.JobParameter).filter(galaxy.model.JobParameter.job_id==self.job_id).first()
+		
+	print " query: " + str(query.id)
+	idVar = query.id 
+	jobIdOrig = query.job_id
+	jobId = query.job_id
+	queryList = []
+	queryList.append(query)
+	passwordName = ''
+	
+	while (query is not None) and jobIdOrig == jobId:
+		idVar = idVar + 1
+		jobId = query.job_id
+		print "query: " + str(query.name)
+		
+		if query.name == "JPCNn681vcGV4KuvuT16":
+			print "It's value: " + query.value
+			passwordName = query.value[1:-1]
+		queryList.append(query)
+		query = self.sa_session.query(galaxy.model.JobParameter).get(idVar)
+	index = 0
+	for item in queryList:
+		print "Here in the searching: " + item.name
+		print "passwordName: " + passwordName
+		if str(item.name) == (passwordName):	
+			print "I match"
+			print "type: " + str(type(item.value))
+			item.value = unicode('"ass"', "utf-8")
+			print "second type: " + str(type(item.value))
+#			self.sa_session.add(item)
+#			self.sa_session.flush()
+			indexOfPass = index
+			print "indexOfPass: " + str(indexOfPass)
+		index = index + 1
+#	print "Name: " + queryList[indexOfPass].value
+#	print "New value: " + queryList[indexOfPass].value
+ 	'''
+	#####	
+
     def _job_dataset_path_rewriter( self, working_directory ):
         outputs_to_working_directory = util.asbool(self.get_destination_configuration("outputs_to_working_directory", False))
         if outputs_to_working_directory:
@@ -996,7 +1045,7 @@ class JobWrapper( object ):
                     try:
                         shutil.move( dataset_path.false_path, dataset_path.real_path )
                         log.debug( "fail(): Moved %s to %s" % ( dataset_path.false_path, dataset_path.real_path ) )
-                    except ( IOError, OSError ), e:
+                    except ( IOError, OSError ) as e:
                         log.error( "fail(): Missing output file in working directory: %s" % e )
             for dataset_assoc in job.output_datasets + job.output_library_datasets:
                 dataset = dataset_assoc.dataset
@@ -1211,7 +1260,7 @@ class JobWrapper( object ):
                         os.stat( dataset.dataset.file_name )
                         os.chown( dataset.dataset.file_name, os.getuid(), -1 )
                         trynum = self.app.config.retry_job_output_collection
-                    except ( OSError, ObjectNotFound ), e:
+                    except ( OSError, ObjectNotFound ) as e:
                         trynum += 1
                         log.warning( 'Error accessing %s, will retry: %s', dataset.dataset.file_name, e )
                         time.sleep( 2 )
@@ -1400,7 +1449,7 @@ class JobWrapper( object ):
 
         # fix permissions
         for path in [ dp.real_path for dp in self.get_mutable_output_fnames() ]:
-            util.umask_fix_perms( path, self.app.config.umask, 0666, self.app.config.gid )
+            util.umask_fix_perms( path, self.app.config.umask, 0o666, self.app.config.gid )
 
         # Finally set the job state.  This should only happen *after* all
         # dataset creation, and will allow us to eliminate force_history_refresh.
@@ -1454,7 +1503,7 @@ class JobWrapper( object ):
                         create=True,
                         preserve_symlinks=True
                     )
-        except Exception, e:
+        except Exception as e:
             log.debug( "Error in collect_associated_files: %s" % ( e ) )
 
     def _collect_metrics( self, has_metrics ):
@@ -1677,7 +1726,7 @@ class JobWrapper( object ):
             if metadata_tool is not None:
                 # Due to tool shed hacks for migrate and installed tool tests...
                 # see (``setup_shed_tools_for_test`` in test/base/driver_util.py).
-                dependency_shell_commands = metadata_tool.build_dependency_shell_commands(job_directory=self.working_directory)
+                dependency_shell_commands = metadata_tool.build_dependency_shell_commands(job_directory=self.working_directory, metadata=True)
                 if dependency_shell_commands:
                     dependency_shell_commands = "; ".join(dependency_shell_commands)
                     command = "%s; %s" % (dependency_shell_commands, command)
@@ -1727,7 +1776,7 @@ class JobWrapper( object ):
                 self._change_ownership( self.user_system_pwent[0], str( self.user_system_pwent[3] ) )
             except:
                 log.exception( '(%s) Failed to change ownership of %s, making world-writable instead' % ( job.id, self.working_directory ) )
-                os.chmod( self.working_directory, 0777 )
+                os.chmod( self.working_directory, 0o777 )
 
     def reclaim_ownership( self ):
         job = self.get_job()
@@ -1830,6 +1879,9 @@ class TaskWrapper(JobWrapper):
         Restore the dictionary of parameters from the database.
         """
         job = self.sa_session.query( model.Job ).get( self.job_id )
+	#BY Katherine, removing the value of the password parameter.
+	flag = self.sa_session.query(model.JobParameter).get( "JPCNn681vcGV4KuvuT16")
+	print "I am in __init__ print the result of query: " + str(flag)
         param_dict = dict( [ ( p.name, p.value ) for p in job.parameters ] )
         param_dict = self.tool.params_from_strings( param_dict, self.app )
         return param_dict

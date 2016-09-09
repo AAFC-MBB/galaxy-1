@@ -42,7 +42,8 @@ define(['utils/utils',
                 message     : null,
                 status      : 'info',
                 cls         : '',
-                persistent  : false
+                persistent  : false,
+                fade        : true
             }).set( options );
             this.listenTo( this.model, 'change', this.render, this );
             this.render();
@@ -62,12 +63,12 @@ define(['utils/utils',
             }
             if ( this.model.get( 'message' ) ) {
                 this.$el.html( this.model.get( 'message' ) );
-                this.$el.fadeIn();
+                this.$el[ this.model.get( 'fade' ) ? 'fadeIn' : 'show' ]();
                 this.timeout && window.clearTimeout( this.timeout );
                 if ( !this.model.get( 'persistent' ) ) {
                     var self = this;
                     this.timeout = window.setTimeout( function() {
-                        self.$el.fadeOut();
+                        self.model.set( 'message', '' );
                     }, 3000 );
                 }
             } else {
@@ -76,6 +77,57 @@ define(['utils/utils',
             return this;
         }
     });
+
+
+    	var Password = Backbone.View.extend({
+		initialize: function(options){
+		this.model = options && options.model || new Backbone.Model({
+			type		: 'password',
+			placeholder	: '',
+			disabled	: false,
+			visible		: true,
+			cls		: '',
+			area		: false,
+			color		: null,
+			style		: null
+		}).set(options);
+		this.tagName='input';
+		this.setElement($( '<' + this.tagName + '/>' ));
+		this.listenTo(this.model, 'change', this.render, this);
+		this.render();
+	},
+	events: {
+		'input': '_onchange'
+	},
+	value: function(new_val) {
+//		new_val = "hello";
+		new_val !== undefined && this.model.set('value', typeof new_val === 'string' ? new_val : '');
+		
+		return this.model.get('value');
+	},
+	render: function() {
+		this.$el.removeClass()
+			.addClass('ui-' + this.tagName )
+			.addClass(this.model.get('cls'))
+			.addClass(this.model.get('style'))
+			.attr('id',this.model.id)
+			.attr('type',this.model.get('type'))
+			.attr('placeholder',this.model.get('placeholder'))
+			.css('color', this.model.get('color') || '' )
+			.css('border-color',this.model.get('color') || '');
+		if (this.model.get('value') !== this.$el.val() ) {
+			this.$el.val(this.model.get('value'));
+		}
+		this.model.get('disabled') ? this.$el.attr('disabled',true) : this.$el.removeAttr( 'disabled' );
+		this.$el[this.model.get('visible') ? 'show' : 'hide' ] ();
+		return this;
+	},
+	_onchange: function(){
+		this.value( this.$el.val());
+		this.model.get('onchange') && this.model.get('onchange')(this.model.get('value'));
+	}
+	});
+
 
     /** Renders an input element used e.g. in the tool form */
     var Input = Backbone.View.extend({
@@ -86,7 +138,9 @@ define(['utils/utils',
                 disabled        : false,
                 visible         : true,
                 cls             : '',
-                area            : false
+                area            : false,
+                color           : null,
+                style           : null
             }).set( options );
             this.tagName = this.model.get( 'area' ) ? 'textarea' : 'input';
             this.setElement( $( '<' + this.tagName + '/>' ) );
@@ -104,9 +158,12 @@ define(['utils/utils',
             this.$el.removeClass()
                     .addClass( 'ui-' + this.tagName )
                     .addClass( this.model.get( 'cls' ) )
+                    .addClass( this.model.get( 'style' ) )
                     .attr( 'id', this.model.id )
                     .attr( 'type', this.model.get( 'type' ) )
-                    .attr( 'placeholder', this.model.get( 'placeholder' ) );
+                    .attr( 'placeholder', this.model.get( 'placeholder' ) )
+                    .css( 'color', this.model.get( 'color' ) || '' )
+                    .css( 'border-color', this.model.get( 'color' ) || '' );
             if ( this.model.get( 'value' ) !== this.$el.val() ) {
                 this.$el.val( this.model.get( 'value' ) );
             }
@@ -147,6 +204,7 @@ define(['utils/utils',
         ButtonCheck : Buttons.ButtonCheck,
         ButtonMenu  : Buttons.ButtonMenu,
         ButtonLink  : Buttons.ButtonLink,
+	Password    : Password,
         Input       : Input,
         Label       : Label,
         Message     : Message,

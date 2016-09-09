@@ -65,24 +65,44 @@
                         ${inputs_recursive_indent( text=input.label, depth=depth )}
                         <td>
                         %for i, element in enumerate(listify(param_values[input.name])):
-                        %if i > 0:
-                        ,
-                        %endif
-                        %if element.history_content_type == "dataset":
-                        <%
-                            hda = element
-                            encoded_id = trans.security.encode_id( hda.id )
-                            show_params_url = h.url_for( controller='dataset', action='show_params', dataset_id=encoded_id )
-                        %>
-                        <a class="input-dataset-show-params" data-hda-id="${encoded_id}"
-                               href="${show_params_url}">${hda.name | h}</a>
-                        %else:
-                        ${element.hid}: ${element.name | h}
-                        %endif
+                            %if i > 0:
+                            ,
+                            %endif
+                            %if element.history_content_type == "dataset":
+                                <%
+                                    hda = element
+                                    encoded_id = trans.security.encode_id( hda.id )
+                                    show_params_url = h.url_for( controller='dataset', action='show_params', dataset_id=encoded_id )
+                                %>
+                                <a class="input-dataset-show-params" data-hda-id="${encoded_id}"
+                                       href="${show_params_url}">${hda.hid}: ${hda.name | h}</a>
+
+                            %else:
+                                ${element.hid}: ${element.name | h}
+                            %endif
                         %endfor
                         </td>
                         <td></td>
                     </tr>
+            %elif input.type == "password":
+		    
+		    <tr>
+			<%
+				value = param_values[input.name]
+				lengthVal = len(value) 
+				outputString = ""
+				for i in range(lengthVal):
+					outputString = outputString + '*'
+				if hasattr(input, "label" ) and input.label:
+					labelpw = input.label
+			%>
+			${inputs_recursive_indent( text=labelpw, depth=depth )}
+			<td>${outputString | h}</td>	
+			<td></td>    
+	 	    </tr>
+
+
+
              %elif input.visible:
                 <%
                 if  hasattr( input, "label" ) and input.label:
@@ -140,6 +160,7 @@
         encoded_hda_id = trans.security.encode_id( hda.id )
         encoded_history_id = trans.security.encode_id( hda.history_id )
         %>
+        <tr><td>Number:</td><td>${hda.hid | h}</td></tr>
         <tr><td>Name:</td><td>${hda.name | h}</td></tr>
         <tr><td>Created:</td><td>${unicodify(hda.create_time.strftime(trans.app.config.pretty_datetime_format))}</td></tr>
         ##      <tr><td>Copied from another history?</td><td>${hda.source_library_dataset}</td></tr>
@@ -168,6 +189,21 @@
             <tr><td>Full Path:</td><td>${hda.file_name | h}</td></tr>
         %endif
         %if job and job.command_line and trans.user_is_admin():
+	    %if job.command_line.find("JPCNn681vcGV4KuvuT16"):
+       	      	<%
+		passVar = ''
+	     	index = job.command_line.find("JPCNn681vcGV4KuvuT16") + len("JPCNn681vcGV4KuvuT16") + 1
+		print "Type command line: " + str(type(job.command_line))
+		print "Last character: " + job.command_line[index]
+	     	while (index< len(job.command_line)) and (job.command_line[index] is not ' '):
+	      		passVar = passVar + job.command_line[index]
+	     		index = index + 1
+	     	job.command_line = job.command_line.replace(passVar, '$PASS')
+	     	job.command_line = job.command_line.replace('JPCNn681vcGV4KuvuT16 ', '') 
+	     	%>
+	    %endif
+	
+			
             <tr><td>Job Command-Line:</td><td>${ job.command_line | h }</td></tr>
         %endif
         %if job and trans.user_is_admin():

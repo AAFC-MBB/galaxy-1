@@ -16,10 +16,12 @@ from galaxy.tools.parameters.basic import (
     DataCollectionToolParameter,
     DataToolParameter,
     RuntimeValue,
+    workflow_building_modes
 )
 from galaxy.tools.parameters.wrapped import make_dict_copy
 from galaxy.tools import DefaultToolState
-from galaxy.util import odict
+from galaxy.tools import ToolInputsNotReadyException
+from galaxy.util import odict, listify
 from galaxy.util.bunch import Bunch
 from galaxy.web.framework import formbuilder
 from tool_shed.util import common_util
@@ -130,7 +132,7 @@ class WorkflowModule( object ):
         """
         pass
 
-    def add_dummy_datasets( self, connections=None):
+    def add_dummy_datasets( self, connections=None, steps=None ):
         # Replaced connected inputs with DummyDataset values.
         pass
 
@@ -415,7 +417,7 @@ class SubWorkflowModule( WorkflowModule ):
         """
         return None
 
-    def add_dummy_datasets( self, connections=None):
+    def add_dummy_datasets( self, connections=None, steps=None ):
         # Replaced connected inputs with DummyDataset values.
         return None
 
@@ -904,22 +906,23 @@ class ToolModule( WorkflowModule ):
         data_inputs = []
 
         def callback( input, prefixed_name, prefixed_label, **kwargs ):
-            if isinstance( input, DataToolParameter ):
-                data_inputs.append( dict(
-                    name=prefixed_name,
-                    label=prefixed_label,
-                    multiple=input.multiple,
-                    extensions=input.extensions,
-                    input_type="dataset", ) )
-            if isinstance( input, DataCollectionToolParameter ):
-                data_inputs.append( dict(
-                    name=prefixed_name,
-                    label=prefixed_label,
-                    multiple=input.multiple,
-                    input_type="dataset_collection",
-                    collection_types=input.collection_types,
-                    extensions=input.extensions,
-                ) )
+            if not hasattr( input, 'hidden' ) or not input.hidden:
+                if isinstance( input, DataToolParameter ):
+                    data_inputs.append( dict(
+                        name=prefixed_name,
+                        label=prefixed_label,
+                        multiple=input.multiple,
+                        extensions=input.extensions,
+                        input_type="dataset", ) )
+                elif isinstance( input, DataCollectionToolParameter ):
+                    data_inputs.append( dict(
+                        name=prefixed_name,
+                        label=prefixed_label,
+                        multiple=input.multiple,
+                        input_type="dataset_collection",
+                        collection_types=input.collection_types,
+                        extensions=input.extensions,
+                    ) )
 
         visit_input_values( self.tool.inputs, self.state.inputs, callback )
         return data_inputs
@@ -1059,20 +1062,24 @@ class ToolModule( WorkflowModule ):
             try:
                 # Replace DummyDatasets with historydatasetassociations
                 visit_input_values( tool.inputs, execution_state.inputs, callback, no_replacement_value=NO_REPLACEMENT )
-            except KeyError, k:
+            except KeyError as k:
                 message_template = "Error due to input mapping of '%s' in '%s'.  A common cause of this is conditional outputs that cannot be determined until runtime, please review your workflow."
                 message = message_template % (tool.name, k.message)
                 raise exceptions.MessageException( message )
             param_combinations.append( execution_state.inputs )
 
-        execution_tracker = execute(
-            trans=self.trans,
-            tool=tool,
-            param_combinations=param_combinations,
-            history=invocation.history,
-            collection_info=collection_info,
-            workflow_invocation_uuid=invocation.uuid.hex
-        )
+        try:
+            execution_tracker = execute(
+                trans=self.trans,
+                tool=tool,
+                param_combinations=param_combinations,
+                history=invocation.history,
+                collection_info=collection_info,
+                workflow_invocation_uuid=invocation.uuid.hex
+            )
+        except ToolInputsNotReadyException:
+            raise DelayedWorkflowEvaluation()
+
         if collection_info:
             step_outputs = dict( execution_tracker.implicit_collections )
         else:
@@ -1132,19 +1139,34 @@ class ToolModule( WorkflowModule ):
         if flush_required:
             self.trans.sa_session.flush()
 
-    def add_dummy_datasets( self, connections=None):
+    def add_dummy_datasets( self, connections=None, steps=None ):
         if connections:
             # Store onnections by input name
-            input_connections_by_name = \
-                dict( ( conn.input_name, conn ) for conn in connections )
+            input_connections_by_name = dict( ( conn.input_name, conn ) for conn in connections )
         else:
             input_connections_by_name = {}
 
         # Any connected input needs to have value RuntimeValue (these
         # are not persisted so we need to do it every time)
-        def callback( input, prefixed_name, **kwargs ):
+        def callback( input, prefixed_name, context, **kwargs ):
             if isinstance( input, DataToolParameter ) or isinstance( input, DataCollectionToolParameter ):
-                if connections is None or prefixed_name in input_connections_by_name:
+                if self.trans.workflow_building_mode is workflow_building_modes.USE_HISTORY:
+                    if connections is None or prefixed_name in input_connections_by_name:
+                        if steps:
+                            connection = input_connections_by_name[ prefixed_name ]
+                            output_step = next( output_step for output_step in steps if connection.output_step_id == output_step.id )
+                            if output_step.type.startswith( 'data' ):
+                                output_inputs = output_step.module.get_runtime_inputs()
+                                output_value = output_inputs[ 'input' ].get_initial_value( self.trans, context )
+                                if isinstance( input, DataToolParameter ):
+                                    for v in listify( output_value ):
+                                        if isinstance( v, self.trans.app.model.HistoryDatasetCollectionAssociation ):
+                                            return v.to_hda_representative()
+                                return output_value
+                        return RuntimeValue()
+                    else:
+                        return input.get_initial_value( self.trans, context )
+                elif connections is None or prefixed_name in input_connections_by_name:
                     return RuntimeValue()
 
         visit_input_values( self.tool.inputs, self.state.inputs, callback )
@@ -1280,7 +1302,7 @@ class WorkflowModuleInjector(object):
         self.trans = trans
         self.allow_tool_state_corrections = allow_tool_state_corrections
 
-    def inject( self, step, step_args=None ):
+    def inject( self, step, step_args=None, steps=None ):
         """ Pre-condition: `step` is an ORM object coming from the database, if
         supplied `step_args` is the representation of the inputs for that step
         supplied via web form.
@@ -1310,7 +1332,7 @@ class WorkflowModuleInjector(object):
 
         # Any connected input needs to have value DummyDataset (these
         # are not persisted so we need to do it every time)
-        module.add_dummy_datasets( connections=step.input_connections )
+        module.add_dummy_datasets( connections=step.input_connections, steps=steps )
         state, step_errors = module.compute_runtime_state( self.trans, step_args )
         step.state = state
         if step.type == "subworkflow":
@@ -1330,11 +1352,9 @@ def populate_module_and_state( trans, workflow, param_map, allow_tool_state_corr
         step_errors = module_injector.inject( step, step_args=step_args )
         if step.type == 'tool' or step.type is None:
             if step_errors:
-                message = "Workflow cannot be run because of validation errors in some steps: %s" % step_errors
-                raise exceptions.MessageException( message )
+                raise exceptions.MessageException( step_errors )
             if step.upgrade_messages:
                 if allow_tool_state_corrections:
                     log.debug( 'Workflow step "%i" had upgrade messages: %s', step.id, step.upgrade_messages )
                 else:
-                    message = "Workflow cannot be run because of step upgrade messages: %s" % step.upgrade_messages
-                    raise exceptions.MessageException( message )
+                    raise exceptions.MessageException( step.upgrade_messages )

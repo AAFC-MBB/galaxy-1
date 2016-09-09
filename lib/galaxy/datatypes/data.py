@@ -1,4 +1,6 @@
 from __future__ import absolute_import
+
+import abc
 import logging
 import mimetypes
 import os
@@ -7,9 +9,10 @@ import tempfile
 import zipfile
 from cgi import escape
 from inspect import isclass
-from six import string_types
 
-from . import metadata
+import paste
+import six
+
 from galaxy import util
 from galaxy.datatypes.metadata import MetadataElement  # import directly to maintain ease of use in Datatype class definitions
 from galaxy.util import inflector
@@ -19,8 +22,7 @@ from galaxy.util.odict import odict
 from galaxy.util.sanitize_html import sanitize_html
 
 from . import dataproviders
-
-import paste
+from . import metadata
 
 XSS_VULNERABLE_MIME_TYPES = [
     'image/svg+xml',  # Unfiltered by Galaxy and may contain JS that would be executed by some browsers.
@@ -35,7 +37,7 @@ col1_startswith = ['chr', 'chl', 'groupun', 'reftig_', 'scaffold', 'super_', 'vc
 valid_strand = ['+', '-', '.']
 
 
-class DataMeta( type ):
+class DataMeta( abc.ABCMeta ):
     """
     Metaclass for Data class.  Sets up metadata spec.
     """
@@ -47,6 +49,7 @@ class DataMeta( type ):
         metadata.Statement.process( cls )
 
 
+@six.add_metaclass(DataMeta)
 @dataproviders.decorators.has_dataproviders
 class Data( object ):
     """
@@ -64,6 +67,7 @@ class Data( object ):
     <class 'galaxy.model.metadata.MetadataParameter'>
 
     """
+    edam_data = "data_0006"
     edam_format = "format_1915"
     # Data is not chunkable by default.
     CHUNKABLE = False
@@ -71,7 +75,6 @@ class Data( object ):
     #: dictionary of metadata fields for this datatype::
     metadata_spec = None
 
-    __metaclass__ = DataMeta
     # Add metadata elements
     MetadataElement( name="dbkey", desc="Database/Build", default="?", param=metadata.DBKeyParameter, multiple=False, no_value="?" )
     # Stores the set of display applications, and viewing methods, supported by this datatype
@@ -123,7 +126,7 @@ class Data( object ):
     def get_raw_data( self, dataset ):
         """Returns the full data. To stream it open the file_name and read/write as needed"""
         try:
-            return file(dataset.file_name, 'rb').read(-1)
+            return open(dataset.file_name, 'rb').read(-1)
         except OSError:
             log.exception('%s reading a file that does not exist %s' % (self.__class__.__name__, dataset.file_name))
             return ''
@@ -157,7 +160,7 @@ class Data( object ):
         Specifying a list of 'skip' items will return True even when a named metadata value is missing
         """
         if check:
-            to_check = [ ( to_check, dataset.metadata.get( to_check ) ) for to_check in check ]
+            to_check = ( ( to_check, dataset.metadata.get( to_check ) ) for to_check in check )
         else:
             to_check = dataset.metadata.items()
         for key, value in to_check:
@@ -326,7 +329,7 @@ class Data( object ):
         # Prevent IE8 from sniffing content type since we're explicit about it.  This prevents intentionally text/plain
         # content from being rendered in the browser
         trans.response.headers['X-Content-Type-Options'] = 'nosniff'
-        if isinstance( data, string_types ):
+        if isinstance( data, six.string_types ):
             return data
         if filename and filename != "index":
             # For files in extra_files_path
@@ -453,7 +456,7 @@ class Data( object ):
 
     def get_display_applications_by_dataset( self, dataset, trans ):
         rval = odict()
-        for key, value in self.display_applications.iteritems():
+        for key, value in self.display_applications.items():
             value = value.filter_by_dataset( dataset, trans )
             if value.links:
                 rval[key] = value
@@ -461,7 +464,7 @@ class Data( object ):
 
     def get_display_types(self):
         """Returns display types available"""
-        return self.supported_display_apps.keys()
+        return list(self.supported_display_apps.keys())
 
     def get_display_label(self, type):
         """Returns primary label for display app"""
@@ -524,7 +527,7 @@ class Data( object ):
         if len(params) > 0:
             trans.log_event( "Converter params: %s" % (str(params)), tool_id=converter.id )
         if not visible:
-            for value in converted_dataset.itervalues():
+            for value in converted_dataset.values():
                 value.visible = False
         if return_output:
             return converted_dataset
@@ -570,7 +573,7 @@ class Data( object ):
         files = odict()
         if self.composite_type != 'auto_primary_file':
             files[ self.primary_file_name ] = self.__new_composite_file( self.primary_file_name )
-        for key, value in self.get_composite_files( dataset=dataset ).iteritems():
+        for key, value in self.get_composite_files( dataset=dataset ).items():
             files[ key ] = value
         return files
 
@@ -584,7 +587,7 @@ class Data( object ):
                 return key % meta_value
             return key
         files = odict()
-        for key, value in self.composite_files.iteritems():
+        for key, value in self.composite_files.items():
             files[ substitute_composite_key( key, value ) ] = value
         return files
 
@@ -688,7 +691,7 @@ class Text( Data ):
         os.close(fd)
         # rewrite the file with unix newlines
         fp = open(dataset.file_name, 'w')
-        for line in file(temp_name, "U"):
+        for line in open(temp_name, "U"):
             line = line.strip() + '\n'
             fp.write(line)
         fp.close()
@@ -700,7 +703,7 @@ class Text( Data ):
         os.close(fd)
         # rewrite the file with unix newlines
         fp = open(dataset.file_name, 'w')
-        for line in file(temp_name, "U"):
+        for line in open(temp_name, "U"):
             line = line.strip() + '\n'
             fp.write(line)
         fp.close()
@@ -734,7 +737,7 @@ class Text( Data ):
         skipping all blank lines and comments.
         """
         data_lines = 0
-        for line in file( dataset.file_name ):
+        for line in open( dataset.file_name ):
             line = line.strip()
             if line and not line.startswith( '#' ):
                 data_lines += 1
@@ -867,6 +870,8 @@ class Text( Data ):
 
 class GenericAsn1( Text ):
     """Class for generic ASN.1 text format"""
+    edam_data = "data_0849"
+    edam_format = "format_1966"
     file_ext = 'asn1'
 
 
@@ -880,6 +885,7 @@ class LineCount( Text ):
 
 class Newick( Text ):
     """New Hampshire/Newick Format"""
+    edam_data = "data_0872"
     edam_format = "format_1910"
     file_ext = "nhx"
 
@@ -904,6 +910,7 @@ class Newick( Text ):
 
 class Nexus( Text ):
     """Nexus format as used By Paup, Mr Bayes, etc"""
+    edam_data = "data_0872"
     edam_format = "format_1912"
     file_ext = "nex"
 
@@ -969,29 +976,24 @@ def get_file_peek( file_name, is_multi_byte=False, WIDTH=256, LINE_COUNT=5, skip
     file_type = None
     data_checked = False
     temp = open( file_name, "U" )
-    last_line = ''
     while count < LINE_COUNT:
-        line = last_line + temp.readline( WIDTH - len( last_line ) )
+        line = temp.readline( WIDTH )
         if line and not is_multi_byte and not data_checked:
             # See if we have a compressed or binary file
             if line[0:2] == util.gzip_magic:
                 file_type = 'gzipped'
-                break
             else:
                 for char in line:
                     if ord( char ) > 128:
                         file_type = 'binary'
                         break
             data_checked = True
-        if file_type in [ 'gzipped', 'binary' ]:
-            break
+            if file_type in [ 'gzipped', 'binary' ]:
+                break
         if not line_wrap:
-            if '\n' in line:
-                i = line.index( '\n' )
-                last_line = line[i + 1:]
-                line = line[:i]
+            if line.endswith('\n'):
+                line = line[:-1]
             else:
-                last_line = ''
                 while True:
                     i = temp.read(1)
                     if not i or i == '\n':

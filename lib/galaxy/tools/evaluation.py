@@ -3,6 +3,8 @@ import os
 import tempfile
 from six import string_types
 
+from sqlalchemy.orm import object_session
+import galaxy
 from galaxy import model
 from galaxy.util.object_wrapper import wrap_with_safe_string
 from galaxy.util.bunch import Bunch
@@ -53,7 +55,13 @@ class ToolEvaluator( object ):
         job = self.job
         incoming = dict( [ ( p.name, p.value ) for p in job.parameters ] )
         incoming = self.tool.params_from_strings( incoming, self.app )
+	####
+	#self.sa_session = self.app.model.context
+	#query = self.sa_session.query(galaxy.model.JobParameter).get(2021)
+	#print "In eval.py: " + str(query.name)
 
+
+	####
         # Full parameter validation
         request_context = WorkRequestContext( app=self.app, user=job.history and job.history.user, history=job.history )
 
@@ -92,7 +100,10 @@ class ToolEvaluator( object ):
         incoming.update( model.User.user_template_environment( job.history and job.history.user ) )
 
         # Build params, done before hook so hook can use
-        param_dict = self.build_param_dict(
+        #print "Incoming at eval.py"
+	#print incoming
+	#print " All doooner"
+	param_dict = self.build_param_dict(
             incoming,
             inp_data,
             out_data,
@@ -112,7 +123,8 @@ class ToolEvaluator( object ):
         self.param_dict = param_dict
 
     def build_param_dict( self, incoming, input_datasets, output_datasets, output_collections, output_paths, job_working_directory, input_paths=[] ):
-        """
+	
+	"""
         Build the dictionary of parameters for substituting into the command
         line. Each value is wrapped in a `InputValueWrapper`, which allows
         all the attributes of the value to be used in the template, *but*
@@ -123,7 +135,6 @@ class ToolEvaluator( object ):
 
         def input():
             raise SyntaxError("Unbound variable input.")  # Don't let $input hang Python evaluation process.
-
         param_dict["input"] = input
 
         param_dict.update(self.tool.template_macro_params)
@@ -142,7 +153,10 @@ class ToolEvaluator( object ):
         self.__populate_non_job_params(param_dict)
 
         # Return the dictionary of parameters
-        return param_dict
+        #print "In build_param_dict just before returning it"
+	#print param_dict
+	#print "Donnerr"
+	return param_dict
 
     def __walk_inputs(self, inputs, input_values, func):
 
@@ -170,8 +184,8 @@ class ToolEvaluator( object ):
     def __populate_wrappers(self, param_dict, input_datasets, input_dataset_paths, job_working_directory):
 
         def wrap_input( input_values, input ):
+            value = input_values[ input.name ]
             if isinstance( input, DataToolParameter ) and input.multiple:
-                value = input_values[ input.name ]
                 dataset_instances = DatasetListWrapper.to_dataset_instances( value )
                 input_values[ input.name ] = \
                     DatasetListWrapper( job_working_directory,
@@ -232,7 +246,7 @@ class ToolEvaluator( object ):
                 input_values[ input.name ] = \
                     DatasetFilenameWrapper( dataset, **wrapper_kwds )
             elif isinstance( input, DataCollectionToolParameter ):
-                dataset_collection = input_values[ input.name ]
+                dataset_collection = value
                 wrapper_kwds = dict(
                     datatypes_registry=self.app.datatypes_registry,
                     dataset_paths=input_dataset_paths,
@@ -247,10 +261,10 @@ class ToolEvaluator( object ):
                 input_values[ input.name ] = wrapper
             elif isinstance( input, SelectToolParameter ):
                 input_values[ input.name ] = SelectToolParameterWrapper(
-                    input, input_values[ input.name ], self.app, other_values=param_dict, path_rewriter=self.unstructured_path_rewriter )
+                    input, value, self.app, other_values=param_dict, path_rewriter=self.unstructured_path_rewriter )
             else:
                 input_values[ input.name ] = InputValueWrapper(
-                    input, input_values[ input.name ], param_dict )
+                    input, value, param_dict )
 
         # HACK: only wrap if check_values is not false, this deals with external
         #       tools where the inputs don't even get passed through. These
@@ -427,25 +441,25 @@ class ToolEvaluator( object ):
 
         try:
             self.__build_config_files( )
-        except Exception, e:
+        except Exception as e:
             # capture and log parsing errors
             global_tool_errors.add_error(self.tool.config_file, "Building Config Files", e)
             raise e
         try:
             self.__build_param_file( )
-        except Exception, e:
+        except Exception as e:
             # capture and log parsing errors
             global_tool_errors.add_error(self.tool.config_file, "Building Param File", e)
             raise e
         try:
             self.__build_command_line( )
-        except Exception, e:
+        except Exception as e:
             # capture and log parsing errors
             global_tool_errors.add_error(self.tool.config_file, "Building Command Line", e)
             raise e
         try:
             self.__build_environment_variables()
-        except Exception, e:
+        except Exception as e:
             global_tool_errors.add_error(self.tool.config_file, "Building Environment Variables", e)
             raise e
 
@@ -457,6 +471,12 @@ class ToolEvaluator( object ):
         """
         command = self.tool.command
         param_dict = self.param_dict
+        #conn = object_session(self).connection()
+	#trans = conn.begin()
+	#print trans
+	#print " In eval.py param_dict"
+	#print param_dict
+	#print "Doner"	
         interpreter = self.tool.interpreter
         command_line = None
         if not command:
@@ -464,7 +484,7 @@ class ToolEvaluator( object ):
         try:
             # Substituting parameters into the command
             command_line = fill_template( command, context=param_dict )
-            cleaned_command_line = []
+	    cleaned_command_line = []
             # Remove leading and trailing whitespace from each line for readability.
             for line in command_line.split( '\n' ):
                 cleaned_command_line.append( line.strip() )

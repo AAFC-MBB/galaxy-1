@@ -44,7 +44,8 @@ class DefaultJobAction(object):
 
     @classmethod
     def execute(cls, app, sa_session, action, job, replacement_dict=None):
-        pass
+        print "In tools/actions/post.py: I got here" 
+	pass
 
     @classmethod
     def get_config_form(cls, trans):
@@ -80,7 +81,7 @@ class EmailAction(DefaultJobAction):
         body = "Your Galaxy job generating dataset '%s' is complete as of %s." % (outdata, datetime.datetime.now().strftime( "%I:%M" ))
         try:
             send_mail( frm, to, subject, body, app.config )
-        except Exception, e:
+        except Exception as e:
             log.error("EmailAction PJA Failed, exception: %s" % e)
 
     @classmethod
