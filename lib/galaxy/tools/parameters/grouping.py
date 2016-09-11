@@ -84,6 +84,7 @@ class Repeat( Group ):
             if '__index__' in d:
                 rval_dict['__index__'] = d['__index__']
             for input in self.inputs.itervalues():
+		#print "Error here: " + str(d[input.name])
                 rval_dict[ input.name ] = input.value_to_basic( d[input.name], app )
             rval.append( rval_dict )
         return rval

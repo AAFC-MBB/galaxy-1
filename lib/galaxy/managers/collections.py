@@ -73,6 +73,7 @@ class DatasetCollectionManager( object ):
                 collection=dataset_collection,
                 name=name,
             )
+	    print "in collection.py: " + str(name)
             if implicit_collection_info:
                 for input_name, input_collection in implicit_collection_info[ "implicit_inputs" ]:
                     dataset_collection_instance.add_implicit_input_collection( input_name, input_collection )

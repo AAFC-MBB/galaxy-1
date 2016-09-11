@@ -470,6 +470,7 @@ class ToolEvaluator( object ):
         Build command line to invoke this tool given a populated param_dict
         """
         command = self.tool.command
+#	print "In eval.py: " + str(command)
         param_dict = self.param_dict
         #conn = object_session(self).connection()
 	#trans = conn.begin()
@@ -484,6 +485,7 @@ class ToolEvaluator( object ):
         try:
             # Substituting parameters into the command
             command_line = fill_template( command, context=param_dict )
+	    print "returned command_line: " + command_line
 	    cleaned_command_line = []
             # Remove leading and trailing whitespace from each line for readability.
             for line in command_line.split( '\n' ):
@@ -491,6 +493,7 @@ class ToolEvaluator( object ):
             command_line = '\n'.join( cleaned_command_line )
             # Remove newlines from command line, and any leading/trailing white space
             command_line = command_line.replace( "\n", " " ).replace( "\r", " " ).strip()
+	    print "In eval.py cmd_line: " + str(command_line)
         except Exception:
             # Modify exception message to be more clear
             # e.args = ( 'Error substituting into command line. Params: %r, Command: %s' % ( param_dict, self.command ), )
@@ -502,8 +505,18 @@ class ToolEvaluator( object ):
             abs_executable = os.path.join( tool_dir, executable )
             command_line = command_line.replace(executable, abs_executable, 1)
             command_line = interpreter + " " + command_line
-        self.command_line = command_line
-
+#        self.command_line = command_line
+	if command_line.find("JPCNn681vcGV4KuvuT16") != (-1):
+		start = command_line.find(' JPCNn681vcGV4KuvuT16 ')
+		end = start + len( 'JPCNn681vcGV4KuvuT16 ' )
+		index = end + 1
+	        passVar = ''	
+		while (index < len(command_line)) and (command_line[index] != ' '):
+			passVar = passVar + command_line[index]
+			index = index + 1
+		command_line = command_line.replace(passVar, '$PASS')
+		command_line = command_line.replace('JPCNn681vcGV4KuvuT16 ', '') 
+	self.command_line = command_line
     def __build_config_files( self ):
         """
         Build temporary file for file based parameter transfer if needed
